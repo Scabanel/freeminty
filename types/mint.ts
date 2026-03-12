@@ -38,6 +38,7 @@ export interface FreeMint {
   externalUrl?: string
   createdAt: string
   source: 'reservoir' | 'zora' | 'manifold'
+  verified?: boolean // OpenSea safelistRequestStatus === 'verified' | 'approved'
 }
 
 export interface EligibilityResult {

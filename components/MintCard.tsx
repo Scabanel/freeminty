@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import { useState } from 'react'
 import { useAccount } from 'wagmi'
-import { ExternalLink, TrendingUp, Users, Zap } from 'lucide-react'
+import { ExternalLink, TrendingUp, Users, Zap, ShieldCheck } from 'lucide-react'
 import { EligibilityBadge } from '@/components/EligibilityBadge'
 import { MintButton } from '@/components/MintButton'
 import { useEligibility, useActiveAddress } from '@/hooks/useEligibility'
@@ -110,9 +110,14 @@ export function MintCard({ mint }: MintCardProps) {
 
         {/* Name + external link */}
         <div className="flex items-start justify-between gap-2">
-          <h3 className="font-semibold text-text-primary text-sm leading-snug line-clamp-1">
-            {mint.name}
-          </h3>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <h3 className="font-semibold text-text-primary text-sm leading-snug line-clamp-1">
+              {mint.name}
+            </h3>
+            {mint.verified && (
+              <ShieldCheck size={13} className="text-success shrink-0" aria-label="Collection vérifiée OpenSea" />
+            )}
+          </div>
           {mint.externalUrl && (
             <a
               href={mint.externalUrl}

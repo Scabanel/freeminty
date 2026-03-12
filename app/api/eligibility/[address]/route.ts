@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { checkEligibility } from '@/lib/eligibility'
-import { fetchAllFreeMints } from '@/lib/reservoir'
+import { fetchActiveFreeMints } from '@/lib/alchemy'
 import type { EligibilityResult } from '@/types/mint'
 import { isAddress } from 'viem'
-
-const ALL_CHAINS = ['ethereum', 'base', 'zora', 'optimism', 'arbitrum', 'polygon']
 
 export async function GET(
   req: NextRequest,
@@ -22,11 +20,14 @@ export async function GET(
     return NextResponse.json({ error: 'mintId required' }, { status: 400 })
   }
 
-  const apiKey = process.env.RESERVOIR_API_KEY || 'demo'
+  const alchemyKey = process.env.ALCHEMY_API_KEY
+  if (!alchemyKey) {
+    const result: EligibilityResult = { mintId, eligible: false, strategy: 'unknown', reason: 'API not configured' }
+    return NextResponse.json(result)
+  }
 
   try {
-    // Fetch all mints to find the specific one
-    const allMints = await fetchAllFreeMints(ALL_CHAINS, apiKey)
+    const allMints = await fetchActiveFreeMints(['ethereum'], alchemyKey)
     const mint = allMints.find((m) => m.id === mintId)
 
     if (!mint) {
@@ -43,9 +44,7 @@ export async function GET(
     const result = await checkEligibility(mint, address)
 
     return NextResponse.json(result, {
-      headers: {
-        'Cache-Control': 's-maxage=60, stale-while-revalidate=120',
-      },
+      headers: { 'Cache-Control': 's-maxage=60, stale-while-revalidate=120' },
     })
   } catch (error) {
     console.error('Eligibility API error:', error)
@@ -55,6 +54,6 @@ export async function GET(
       strategy: 'unknown',
       reason: 'Eligibility check failed',
     }
-    return NextResponse.json(result, { status: 200 }) // 200 to not break UI
+    return NextResponse.json(result, { status: 200 })
   }
 }

@@ -1,9 +1,10 @@
 'use client'
 
-import { TrendingUp, Clock, Timer, ChevronDown } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import { cn } from '@/lib/utils'
 import type { SortOrder } from '@/types/mint'
+import { useEffect, useState } from 'react'
 
 const SORTS: { value: SortOrder; label: string }[] = [
   { value: 'recent', label: 'Plus récent' },
@@ -12,12 +13,14 @@ const SORTS: { value: SortOrder; label: string }[] = [
 ]
 
 export function FilterBar() {
-  const { sortOrder, setSortOrder } = useUIStore()
+  const { sortOrder, setSortOrder, verifiedOnly, setVerifiedOnly } = useUIStore()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex items-center justify-between gap-3 flex-wrap">
       {/* Sort tabs */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
         {SORTS.map((s) => (
           <button
             key={s.value}
@@ -32,6 +35,21 @@ export function FilterBar() {
             {s.label}
           </button>
         ))}
+
+        {/* Verified-only toggle */}
+        <button
+          onClick={() => setVerifiedOnly(!verifiedOnly)}
+          className={cn(
+            'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-150',
+            mounted && verifiedOnly
+              ? 'bg-success/15 border border-success/40 text-success'
+              : 'border border-border text-text-secondary hover:bg-surface-2 hover:border-border-2'
+          )}
+          title="Afficher uniquement les collections vérifiées OpenSea"
+        >
+          <ShieldCheck size={12} />
+          Vérifié
+        </button>
       </div>
 
       {/* ETH badge */}

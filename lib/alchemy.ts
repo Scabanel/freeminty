@@ -53,9 +53,9 @@ async function getRecentMintTransfers(
   rpcHost: string,
   apiKey: string,
   blocksBack: number
-): Promise<AlchemyTransfer[]> {
+): Promise<{ transfers: AlchemyTransfer[]; currentBlock: number }> {
   const blockHex = await rpcCall<string>(rpcHost, apiKey, 'eth_blockNumber', [])
-  if (!blockHex) return []
+  if (!blockHex) return { transfers: [], currentBlock: 0 }
 
   const currentBlock = parseInt(blockHex, 16)
   const fromBlock = '0x' + Math.max(0, currentBlock - blocksBack).toString(16)
@@ -71,7 +71,7 @@ async function getRecentMintTransfers(
     excludeZeroValue: false,
   }])
 
-  return result?.transfers || []
+  return { transfers: result?.transfers || [], currentBlock }
 }
 
 async function batchGetTxValues(
@@ -114,6 +114,11 @@ interface ContractMintInfo {
   address: string
   mintCount: number
   lastMintAt: string
+}
+
+interface WindowResult {
+  mints: Map<string, ContractMintInfo>
+  currentBlock: number
 }
 
 async function getContractMetadataBatch(
@@ -159,6 +164,7 @@ interface NftContractMetadata {
     discordUrl: string | null
     bannerImageUrl: string | null
     lastIngestedAt: string | null
+    safelistRequestStatus: string | null
   }
 }
 
@@ -196,7 +202,8 @@ function metadataToFreeMint(
   meta: NftContractMetadata,
   mintInfo: ContractMintInfo,
   chainKey: string,
-  chainId: number
+  chainId: number,
+  currentBlock: number
 ): FreeMint | null {
   const osm = meta.openSeaMetadata
   const name = osm.collectionName || meta.name
@@ -212,6 +219,20 @@ function metadataToFreeMint(
 
   // INT_MAX totalSupply is a DeFi/protocol placeholder (e.g. ve-tokens)
   if (meta.totalSupply && parseInt(meta.totalSupply) > 1_000_000_000) return null
+
+  // Skip old collections — only show contracts deployed in the last 30 days
+  // ETH post-Merge: ~7200 blocks/day → 30 days ≈ 216 000 blocks
+  const MAX_AGE_BLOCKS = 7200 * 30
+  if (currentBlock > 0) {
+    if (meta.deployedBlockNumber) {
+      // Deployment age known — hard filter
+      if (currentBlock - meta.deployedBlockNumber > MAX_AGE_BLOCKS) return null
+    } else {
+      // Deployment age unknown — fallback: established collection has floor > 0.001 ETH
+      // A fresh drop may quickly develop a small floor, allow up to 0.001 ETH
+      if ((osm.floorPrice ?? 0) > 0.001) return null
+    }
+  }
 
   const image = osm.imageUrl || '/placeholder-nft.png'
   const slug = osm.collectionSlug
@@ -245,6 +266,7 @@ function metadataToFreeMint(
     externalUrl: opensea || osm.externalUrl || explorer,
     createdAt: mintInfo.lastMintAt,
     source: 'reservoir',
+    verified: osm.safelistRequestStatus === 'verified' || osm.safelistRequestStatus === 'approved',
   }
 }
 
@@ -256,9 +278,9 @@ async function collectFreeMintsInWindow(
   rpcHost: string,
   apiKey: string,
   blocksBack: number
-): Promise<Map<string, ContractMintInfo>> {
-  const transfers = await getRecentMintTransfers(rpcHost, apiKey, blocksBack)
-  if (transfers.length === 0) return new Map()
+): Promise<WindowResult> {
+  const { transfers, currentBlock } = await getRecentMintTransfers(rpcHost, apiKey, blocksBack)
+  if (transfers.length === 0) return { mints: new Map(), currentBlock }
 
   const uniqueHashes = [...new Set(transfers.map((t) => t.hash))]
   const txValues = await batchGetTxValues(rpcHost, apiKey, uniqueHashes)
@@ -282,7 +304,7 @@ async function collectFreeMintsInWindow(
     }
   }
 
-  return contractMints
+  return { mints: contractMints, currentBlock }
 }
 
 /**
@@ -312,20 +334,13 @@ export async function fetchActiveFreeMints(
       const config = ALCHEMY_RPC[chainKey]
       if (!config) return
 
-      // Pass 1 : dernières 30 min — activité très récente = mint certainement encore ouvert
-      // ETH : 12s/block → 30 min = ~150 blocks
-      const blocks30m = Math.ceil(config.blocksPerDay / 48)
-      const mintsHot = await collectFreeMintsInWindow(config.rpcHost, apiKey, blocks30m)
-
-      // Pass 2 : dernières 2h si moins de 4 résultats dans les 30 premières minutes
-      let contractMints = mintsHot
-      if (mintsHot.size < 4) {
-        const blocks2h = Math.ceil(config.blocksPerDay / 12)
-        const mintsCool = await collectFreeMintsInWindow(config.rpcHost, apiKey, blocks2h)
-        for (const [addr, info] of mintsCool.entries()) {
-          if (!contractMints.has(addr)) contractMints.set(addr, info)
-        }
-      }
+      // Fenêtre 2h — toujours : donne assez de diversité pour trouver les drops actifs
+      // Le filtre dur cutoff2h + filtre d'âge du contrat garantissent la pertinence
+      // ETH : 12s/block → 2h = ~600 blocks
+      const blocks2h = Math.ceil(config.blocksPerDay / 12)
+      const result = await collectFreeMintsInWindow(config.rpcHost, apiKey, blocks2h)
+      let contractMints = result.mints
+      let currentBlock = result.currentBlock
 
       if (contractMints.size === 0) return
 
@@ -353,7 +368,7 @@ export async function fetchActiveFreeMints(
         if (seen.has(key)) continue
         seen.add(key)
 
-        const mint = metadataToFreeMint(meta, mintInfo, chainKey, config.chainId)
+        const mint = metadataToFreeMint(meta, mintInfo, chainKey, config.chainId, currentBlock)
         if (mint) allMints.push(mint)
       }
     })

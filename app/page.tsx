@@ -1,5 +1,6 @@
 import { Header } from '@/components/Header'
 import { MintFeed } from '@/components/MintFeed'
+import { WatchlistPanel } from '@/components/WatchlistPanel'
 
 export default function Home() {
   return (
@@ -23,6 +24,11 @@ export default function Home() {
         </div>
 
         <MintFeed />
+
+        {/* Watchlist */}
+        <div className="border-t border-border pt-8">
+          <WatchlistPanel />
+        </div>
       </main>
 
       <footer className="border-t border-border py-6 mt-10">

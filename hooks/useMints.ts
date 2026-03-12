@@ -13,29 +13,31 @@ async function fetchMints(chain: string, sort: string): Promise<FreeMint[]> {
 }
 
 export function useMints() {
-  const { selectedChain, sortOrder, searchQuery } = useUIStore()
+  const { sortOrder, searchQuery, verifiedOnly } = useUIStore()
 
   const query = useQuery({
     queryKey: ['mints', 'ethereum', sortOrder],
     queryFn: () => fetchMints('ethereum', sortOrder),
-    refetchInterval: 60_000,          // refetch en background toutes les 60s
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
-    staleTime: 55_000,                // données fraîches 55s → pas de flash de loading
-    gcTime: 5 * 60_000,              // garde en cache 5 min
-    placeholderData: (prev) => prev,  // garde l'ancien data visible pendant le refetch
+    staleTime: 55_000,
+    gcTime: 5 * 60_000,
+    placeholderData: (prev) => prev,
   })
 
   const filteredMints = useMemo(() => {
     if (!query.data) return []
+    let results = query.data
+    if (verifiedOnly) results = results.filter((m) => m.verified)
     const q = searchQuery.toLowerCase().trim()
-    if (!q) return query.data
-    return query.data.filter(
+    if (!q) return results
+    return results.filter(
       (m) =>
         m.name.toLowerCase().includes(q) ||
         m.contractAddress.toLowerCase().includes(q) ||
         m.chain.toLowerCase().includes(q)
     )
-  }, [query.data, searchQuery])
+  }, [query.data, searchQuery, verifiedOnly])
 
   return {
     ...query,
